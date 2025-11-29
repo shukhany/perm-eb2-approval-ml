@@ -93,3 +93,5 @@ Chosen for its:
 - Reliable performance in high-dimensional one-hot encoded data  
 
 The final trained pipeline is saved as:
+```text
+model_perm_best.pkl
