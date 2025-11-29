@@ -94,4 +94,12 @@ Chosen for its:
 
 The final trained pipeline is saved as:
 ```text
+
+
+## 🔗 Deployed Application
+
+Live model available here:
+
+👉 **https://perm-eb2-approval-ml-pmerzmujwm8jfxgyands3v.streamlit.app/**
+
 model_perm_best.pkl
