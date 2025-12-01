@@ -106,7 +106,7 @@ Live model available here:
 
 Live model available here:
 
-👉 **https://perm-eb2-approval-ml-pmerzmujwm8jfxgyands3v.streamlit.app/**
+👉 **http://perm-eb2-approval-ml-3aq5sm5kqk6xgdijksbjk4/**
 
 model_perm_best.pkl/**
 
