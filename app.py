@@ -2,7 +2,6 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import joblib
-
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
@@ -15,7 +14,6 @@ from sklearn.utils import _encode as _enc
 # ---- 0a) Make np.isnan safe for any dtype ----
 _orig_isnan = np.isnan
 
-
 def safe_isnan(x):
     """
     Safe wrapper around np.isnan.
@@ -24,13 +22,14 @@ def safe_isnan(x):
     """
     try:
         return _orig_isnan(x)
-    except TypeError:
-        arr = np.asarray(x, dtype=object)
-        return np.zeros_like(arr, dtype=bool)
-
+    except (TypeError, AttributeError):
+        if isinstance(x, (list, tuple)):
+            x = np.array(x, dtype=object)
+        elif not isinstance(x, np.ndarray):
+            return False
+        return np.zeros(x.shape if hasattr(x, 'shape') else len(x), dtype=bool)
 
 np.isnan = safe_isnan  # global patch
-
 
 # ---- 0b) Override sklearn.utils._encode._check_unknown ----
 def _check_unknown_safe(X, known_values, return_mask=False):
@@ -40,38 +39,53 @@ def _check_unknown_safe(X, known_values, return_mask=False):
       * Uses np.isin on strings (no str/float comparison issues)
       * Does NOT rely on the original isnan logic
     """
-    X_arr = np.asarray(X, dtype=object)
-    kv_arr = np.asarray(known_values, dtype=object)
-
-    X_str = np.array([str(v) for v in X_arr], dtype=object)
-    kv_str = np.array([str(v) for v in kv_arr], dtype=object)
-
+    # Convert to arrays and handle scalar inputs
+    if np.isscalar(X):
+        X = np.array([X], dtype=object)
+    else:
+        X = np.asarray(X, dtype=object)
+    
+    if np.isscalar(known_values):
+        known_values = np.array([known_values], dtype=object)
+    else:
+        known_values = np.asarray(known_values, dtype=object)
+    
+    # Convert everything to strings to avoid type comparison issues
+    X_str = np.array([str(v) if v is not None else 'None' for v in X.flat], dtype=object).reshape(X.shape)
+    kv_str = np.array([str(v) if v is not None else 'None' for v in known_values.flat], dtype=object)
+    
     # membership mask on string arrays
-    mask = np.isin(X_str, kv_str)
+    if X_str.ndim > 1:
+        mask = np.zeros(X_str.shape, dtype=bool)
+        for i in range(X_str.shape[1]):
+            mask[:, i] = np.isin(X_str[:, i], kv_str)
+    else:
+        mask = np.isin(X_str, kv_str)
+    
     diff = X_str[~mask]
     unique_diff = np.unique(diff)
-
+    
     if return_mask:
         return unique_diff, mask
     else:
         return unique_diff
 
-
 _enc._check_unknown = _check_unknown_safe  # monkey-patch sklearn
-
 
 # ============================================================
 # 1) Load trained pipeline
 # ============================================================
-
 MODEL_PATH = "model_perm_best.pkl"
-model = joblib.load(MODEL_PATH)
 
+try:
+    model = joblib.load(MODEL_PATH)
+except Exception as e:
+    st.error(f"Error loading model: {e}")
+    st.stop()
 
 # ============================================================
 # 2) Make all OneHotEncoder categories pure strings
 # ============================================================
-
 def _fix_ohe_categories(estimator):
     """
     Walk the estimator recursively and force OneHotEncoder.categories_
@@ -83,41 +97,34 @@ def _fix_ohe_categories(estimator):
             new_cats = []
             for arr in estimator.categories_:
                 arr_obj = np.asarray(arr, dtype=object)
-                new_cats.append(np.array([str(v) for v in arr_obj], dtype=object))
+                # Convert all values to strings, handling None/NaN
+                str_arr = np.array([str(v) if v is not None else 'None' for v in arr_obj], dtype=object)
+                new_cats.append(str_arr)
             estimator.categories_ = new_cats
-
     elif isinstance(estimator, Pipeline):
         for _, step in estimator.steps:
             _fix_ohe_categories(step)
-
     elif isinstance(estimator, ColumnTransformer):
         for _, trans, _ in estimator.transformers:
             if trans in ("drop", "passthrough"):
                 continue
             _fix_ohe_categories(trans)
-
     elif hasattr(estimator, "estimators_"):
         for sub in estimator.estimators_:
             _fix_ohe_categories(sub)
 
-
 _fix_ohe_categories(model)
-
 
 # ============================================================
 # 3) Streamlit UI
 # ============================================================
-
 st.set_page_config(page_title="EB-2 PERM Approval Probability (FY2024)", layout="centered")
-
 st.title("EB-2 PERM Approval Probability Estimator (FY2024)")
-
 st.write(
     "This tool estimates the **probability that a PERM case will be certified** "
     "based on patterns in FY2024 PERM disclosure data. "
     "It is for **exploratory, educational use only** and does **not** constitute legal advice."
 )
-
 st.markdown("---")
 
 col1, col2 = st.columns(2)
@@ -153,11 +160,9 @@ with col2:
 
 st.markdown("---")
 
-
 # ============================================================
 # 4) Helper: annualize wages (must match training logic)
 # ============================================================
-
 def to_annual(amount: float, unit: str) -> float:
     if unit == "Year":
         return amount
@@ -169,11 +174,9 @@ def to_annual(amount: float, unit: str) -> float:
         return amount * 2080.0  # 40h/week * 52 weeks
     return amount
 
-
 # ============================================================
 # 5) Build model input & predict
 # ============================================================
-
 if st.button("Estimate Approval Probability"):
     try:
         pw_wage_val = float(pw_wage)
@@ -186,23 +189,23 @@ if st.button("Estimate Approval Probability"):
         wage_ratio = offer_annual / pw_annual if pw_annual > 0 else np.nan
 
         # One-row DataFrame, schema aligned with training code
+        # IMPORTANT: Convert ALL categorical values to strings to match the fixed categories
         input_data = {
             "PW_WAGE": [pw_wage_val],
-            "PW_UNIT_OF_PAY": [pw_unit],
+            "PW_UNIT_OF_PAY": [str(pw_unit)],
             "WAGE_OFFER_FROM": [offer_from_val],
             "WAGE_OFFER_TO": [offer_to_val],
-            "WAGE_OFFER_UNIT_OF_PAY": [offer_unit],
+            "WAGE_OFFER_UNIT_OF_PAY": [str(offer_unit)],
             "PW_WAGE_ANNUAL": [pw_annual],
             "OFFER_WAGE_ANNUAL": [offer_annual],
             "WAGE_RATIO": [wage_ratio],
             "PW_SOC_CODE": [str(soc_code)],
             "NAICS_CODE": [str(naics_code)],
             "MINIMUM_EDUCATION": [str(edu)],
-            "WORKSITE_STATE": [str(state)],
+            "WORKSITE_STATE": [str(state).upper()],  # Ensure uppercase
             "FW_OWNERSHIP_INTEREST": [str(ownership)],
             "FISCAL_YEAR": [2024],
         }
-
         df = pd.DataFrame(input_data)
 
         # Predict probability of certification
@@ -211,7 +214,6 @@ if st.button("Estimate Approval Probability"):
 
         st.subheader("Estimated Approval Probability")
         st.markdown(f"### ✅ **{prob:.1f}%** likelihood of certification (model estimate)")
-
         st.caption(
             "Note: This estimate is based on FY2024 PERM disclosure patterns only and "
             "does not replace legal or case-specific advice."
@@ -223,3 +225,8 @@ if st.button("Estimate Approval Probability"):
     except Exception as e:
         st.error("The model encountered an error while scoring this case.")
         st.write(f"**Internal error:** {e}")
+        
+        # Additional debugging info
+        with st.expander("Debug Information"):
+            import traceback
+            st.code(traceback.format_exc())
