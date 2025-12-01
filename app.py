@@ -5,72 +5,56 @@ import joblib
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
-from sklearn.utils import _encode as _enc
 
 # ============================================================
-# 0) GLOBAL PATCHES – numpy + sklearn encode helpers
+# MONKEY PATCHES - Must be applied before loading the model
 # ============================================================
 
-# ---- 0a) Make np.isnan safe for any dtype ----
-_orig_isnan = np.isnan
+# Store original methods
+_original_ndarray_lt = np.ndarray.__lt__
+_original_ndarray_le = np.ndarray.__le__
+_original_ndarray_gt = np.ndarray.__gt__
+_original_ndarray_ge = np.ndarray.__ge__
+_original_searchsorted = np.ndarray.searchsorted
 
-def safe_isnan(x):
-    """
-    Safe wrapper around np.isnan.
-    If numpy can't handle the dtype (e.g., strings / mixed object arrays),
-    return an all-False mask instead of raising TypeError.
-    """
+def safe_comparison_method(original_method):
+    """Wrapper for comparison methods that handles mixed types."""
+    def wrapper(self, other):
+        try:
+            return original_method(self, other)
+        except TypeError as e:
+            if "'<' not supported" in str(e) or "'>' not supported" in str(e):
+                # Convert both to strings and compare
+                self_str = np.array([str(x) for x in self.flat], dtype=object).reshape(self.shape)
+                if isinstance(other, np.ndarray):
+                    other_str = np.array([str(x) for x in other.flat], dtype=object).reshape(other.shape)
+                else:
+                    other_str = str(other)
+                return original_method(self_str, other_str)
+            raise
+    return wrapper
+
+def safe_searchsorted(self, v, side='left', sorter=None):
+    """Safe searchsorted that converts to strings if needed."""
     try:
-        return _orig_isnan(x)
-    except (TypeError, AttributeError):
-        if isinstance(x, (list, tuple)):
-            x = np.array(x, dtype=object)
-        elif not isinstance(x, np.ndarray):
-            return False
-        return np.zeros(x.shape if hasattr(x, 'shape') else len(x), dtype=bool)
+        return _original_searchsorted(self, v, side=side, sorter=sorter)
+    except TypeError as e:
+        if "'<' not supported" in str(e):
+            # Convert to strings
+            self_str = np.array([str(x) for x in self.flat], dtype=object).reshape(self.shape)
+            if isinstance(v, np.ndarray):
+                v_str = np.array([str(x) for x in v.flat], dtype=object).reshape(v.shape)
+            else:
+                v_str = str(v) if not isinstance(v, (list, tuple)) else np.array([str(x) for x in v], dtype=object)
+            return _original_searchsorted(self_str, v_str, side=side, sorter=sorter)
+        raise
 
-np.isnan = safe_isnan  # global patch
-
-# ---- 0b) Override sklearn.utils._encode._check_unknown ----
-def _check_unknown_safe(X, known_values, return_mask=False):
-    """
-    Replacement for sklearn's _check_unknown that:
-      * Casts everything to strings
-      * Uses np.isin on strings (no str/float comparison issues)
-      * Does NOT rely on the original isnan logic
-    """
-    # Convert to arrays and handle scalar inputs
-    if np.isscalar(X):
-        X = np.array([X], dtype=object)
-    else:
-        X = np.asarray(X, dtype=object)
-    
-    if np.isscalar(known_values):
-        known_values = np.array([known_values], dtype=object)
-    else:
-        known_values = np.asarray(known_values, dtype=object)
-    
-    # Convert everything to strings to avoid type comparison issues
-    X_str = np.array([str(v) if v is not None else 'None' for v in X.flat], dtype=object).reshape(X.shape)
-    kv_str = np.array([str(v) if v is not None else 'None' for v in known_values.flat], dtype=object)
-    
-    # membership mask on string arrays
-    if X_str.ndim > 1:
-        mask = np.zeros(X_str.shape, dtype=bool)
-        for i in range(X_str.shape[1]):
-            mask[:, i] = np.isin(X_str[:, i], kv_str)
-    else:
-        mask = np.isin(X_str, kv_str)
-    
-    diff = X_str[~mask]
-    unique_diff = np.unique(diff)
-    
-    if return_mask:
-        return unique_diff, mask
-    else:
-        return unique_diff
-
-_enc._check_unknown = _check_unknown_safe  # monkey-patch sklearn
+# Apply patches
+np.ndarray.__lt__ = safe_comparison_method(_original_ndarray_lt)
+np.ndarray.__le__ = safe_comparison_method(_original_ndarray_le)
+np.ndarray.__gt__ = safe_comparison_method(_original_ndarray_gt)
+np.ndarray.__ge__ = safe_comparison_method(_original_ndarray_ge)
+np.ndarray.searchsorted = safe_searchsorted
 
 # ============================================================
 # 1) Load trained pipeline
@@ -81,39 +65,33 @@ try:
     model = joblib.load(MODEL_PATH)
 except Exception as e:
     st.error(f"Error loading model: {e}")
+    import traceback
+    st.code(traceback.format_exc())
     st.stop()
 
 # ============================================================
-# 2) Make all OneHotEncoder categories pure strings
+# 2) Convert all OneHotEncoder categories to strings
 # ============================================================
-def _fix_ohe_categories(estimator):
-    """
-    Walk the estimator recursively and force OneHotEncoder.categories_
-    to be arrays of strings (dtype=object).
-    This avoids '<' comparisons between str and float in sklearn internals.
-    """
+def fix_ohe_categories(estimator):
+    """Convert all OneHotEncoder categories to strings."""
     if isinstance(estimator, OneHotEncoder):
-        if hasattr(estimator, "categories_") and estimator.categories_ is not None:
-            new_cats = []
-            for arr in estimator.categories_:
-                arr_obj = np.asarray(arr, dtype=object)
-                # Convert all values to strings, handling None/NaN
-                str_arr = np.array([str(v) if v is not None else 'None' for v in arr_obj], dtype=object)
-                new_cats.append(str_arr)
-            estimator.categories_ = new_cats
+        if hasattr(estimator, 'categories_') and estimator.categories_ is not None:
+            estimator.categories_ = [
+                np.array([str(cat) for cat in cats], dtype=object)
+                for cats in estimator.categories_
+            ]
     elif isinstance(estimator, Pipeline):
         for _, step in estimator.steps:
-            _fix_ohe_categories(step)
+            fix_ohe_categories(step)
     elif isinstance(estimator, ColumnTransformer):
-        for _, trans, _ in estimator.transformers:
-            if trans in ("drop", "passthrough"):
-                continue
-            _fix_ohe_categories(trans)
-    elif hasattr(estimator, "estimators_"):
+        for _, trans, _ in estimator.transformers_:
+            if trans not in ('drop', 'passthrough'):
+                fix_ohe_categories(trans)
+    elif hasattr(estimator, 'estimators_'):
         for sub in estimator.estimators_:
-            _fix_ohe_categories(sub)
+            fix_ohe_categories(sub)
 
-_fix_ohe_categories(model)
+fix_ohe_categories(model)
 
 # ============================================================
 # 3) Streamlit UI
@@ -164,32 +142,32 @@ st.markdown("---")
 # 4) Helper: annualize wages (must match training logic)
 # ============================================================
 def to_annual(amount: float, unit: str) -> float:
-    if unit == "Year":
-        return amount
-    if unit == "Month":
-        return amount * 12.0
-    if unit == "Week":
-        return amount * 52.0
-    if unit == "Hour":
-        return amount * 2080.0  # 40h/week * 52 weeks
-    return amount
+    """Convert wage amount to annual equivalent."""
+    unit_multipliers = {
+        "Year": 1.0,
+        "Month": 12.0,
+        "Week": 52.0,
+        "Hour": 2080.0  # 40 hours/week * 52 weeks
+    }
+    return amount * unit_multipliers.get(unit, 1.0)
 
 # ============================================================
 # 5) Build model input & predict
 # ============================================================
 if st.button("Estimate Approval Probability"):
     try:
+        # Convert inputs to appropriate types
         pw_wage_val = float(pw_wage)
         offer_from_val = float(offer_from)
         offer_to_val = float(offer_to)
 
+        # Calculate derived features
         pw_annual = to_annual(pw_wage_val, pw_unit)
         offer_mid = (offer_from_val + offer_to_val) / 2.0
         offer_annual = to_annual(offer_mid, offer_unit)
-        wage_ratio = offer_annual / pw_annual if pw_annual > 0 else np.nan
+        wage_ratio = offer_annual / pw_annual if pw_annual > 0 else 0.0
 
-        # One-row DataFrame, schema aligned with training code
-        # IMPORTANT: Convert ALL categorical values to strings to match the fixed categories
+        # Create input DataFrame with ALL features as strings for categorical columns
         input_data = {
             "PW_WAGE": [pw_wage_val],
             "PW_UNIT_OF_PAY": [str(pw_unit)],
@@ -202,16 +180,23 @@ if st.button("Estimate Approval Probability"):
             "PW_SOC_CODE": [str(soc_code)],
             "NAICS_CODE": [str(naics_code)],
             "MINIMUM_EDUCATION": [str(edu)],
-            "WORKSITE_STATE": [str(state).upper()],  # Ensure uppercase
+            "WORKSITE_STATE": [str(state).upper()],
             "FW_OWNERSHIP_INTEREST": [str(ownership)],
             "FISCAL_YEAR": [2024],
         }
+        
         df = pd.DataFrame(input_data)
+        
+        # Explicitly convert object columns to string dtype
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                df[col] = df[col].astype(str)
 
-        # Predict probability of certification
-        prob = model.predict_proba(df)[:, 1][0] * 100.0
-        prob = float(prob)
+        # Make prediction
+        prob_array = model.predict_proba(df)
+        prob = float(prob_array[:, 1][0] * 100.0)
 
+        # Display results
         st.subheader("Estimated Approval Probability")
         st.markdown(f"### ✅ **{prob:.1f}%** likelihood of certification (model estimate)")
         st.caption(
@@ -226,7 +211,7 @@ if st.button("Estimate Approval Probability"):
         st.error("The model encountered an error while scoring this case.")
         st.write(f"**Internal error:** {e}")
         
-        # Additional debugging info
-        with st.expander("Debug Information"):
+        # Show detailed traceback
+        with st.expander("Debug Information (Click to expand)"):
             import traceback
             st.code(traceback.format_exc())
