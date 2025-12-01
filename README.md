@@ -100,6 +100,14 @@ The final trained pipeline is saved as:
 
 Live model available here:
 
+👉 **
+
+## 🔗 Deployed Application
+
+Live model available here:
+
 👉 **https://perm-eb2-approval-ml-pmerzmujwm8jfxgyands3v.streamlit.app/**
+
+model_perm_best.pkl/**
 
 model_perm_best.pkl
