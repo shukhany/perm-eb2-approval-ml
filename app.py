@@ -6,20 +6,21 @@ import joblib
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.utils import _encode as _enc
 
-# ------------------------------------------------------------
-# 0) Global patch: make np.isnan safe for mixed dtypes
-# ------------------------------------------------------------
+# ============================================================
+# 0) GLOBAL PATCHES – numpy + sklearn encode helpers
+# ============================================================
+
+# ---- 0a) Make np.isnan safe for any dtype ----
 _orig_isnan = np.isnan
 
 
 def safe_isnan(x):
     """
-    Wrapper around np.isnan.
-
-    If numpy cannot handle the dtype (e.g., strings / mixed object arrays),
-    just return an all-False boolean array of the same shape instead of
-    throwing a TypeError.
+    Safe wrapper around np.isnan.
+    If numpy can't handle the dtype (e.g., strings / mixed object arrays),
+    return an all-False mask instead of raising TypeError.
     """
     try:
         return _orig_isnan(x)
@@ -28,31 +29,61 @@ def safe_isnan(x):
         return np.zeros_like(arr, dtype=bool)
 
 
-np.isnan = safe_isnan  # brutal but solves the sklearn internal bug
+np.isnan = safe_isnan  # global patch
 
 
-# ------------------------------------------------------------
+# ---- 0b) Override sklearn.utils._encode._check_unknown ----
+def _check_unknown_safe(X, known_values, return_mask=False):
+    """
+    Replacement for sklearn's _check_unknown that:
+      * Casts everything to strings
+      * Uses np.isin on strings (no str/float comparison issues)
+      * Does NOT rely on the original isnan logic
+    """
+    X_arr = np.asarray(X, dtype=object)
+    kv_arr = np.asarray(known_values, dtype=object)
+
+    X_str = np.array([str(v) for v in X_arr], dtype=object)
+    kv_str = np.array([str(v) for v in kv_arr], dtype=object)
+
+    # membership mask on string arrays
+    mask = np.isin(X_str, kv_str)
+    diff = X_str[~mask]
+    unique_diff = np.unique(diff)
+
+    if return_mask:
+        return unique_diff, mask
+    else:
+        return unique_diff
+
+
+_enc._check_unknown = _check_unknown_safe  # monkey-patch sklearn
+
+
+# ============================================================
 # 1) Load trained pipeline
-# ------------------------------------------------------------
+# ============================================================
+
 MODEL_PATH = "model_perm_best.pkl"
 model = joblib.load(MODEL_PATH)
 
 
-# ------------------------------------------------------------
-# 2) Fix OneHotEncoder categories to avoid mixed str/float
-# ------------------------------------------------------------
+# ============================================================
+# 2) Make all OneHotEncoder categories pure strings
+# ============================================================
+
 def _fix_ohe_categories(estimator):
     """
-    Walk the estimator and, for every OneHotEncoder, force categories_
-    to be pure strings (dtype=object). This avoids '<' comparisons
-    between str and float inside sklearn.
+    Walk the estimator recursively and force OneHotEncoder.categories_
+    to be arrays of strings (dtype=object).
+    This avoids '<' comparisons between str and float in sklearn internals.
     """
     if isinstance(estimator, OneHotEncoder):
         if hasattr(estimator, "categories_") and estimator.categories_ is not None:
             new_cats = []
             for arr in estimator.categories_:
-                arr = np.asarray(arr, dtype=object)
-                new_cats.append(np.array([str(x) for x in arr], dtype=object))
+                arr_obj = np.asarray(arr, dtype=object)
+                new_cats.append(np.array([str(v) for v in arr_obj], dtype=object))
             estimator.categories_ = new_cats
 
     elif isinstance(estimator, Pipeline):
@@ -73,9 +104,10 @@ def _fix_ohe_categories(estimator):
 _fix_ohe_categories(model)
 
 
-# ------------------------------------------------------------
-# 3) Streamlit page config + UI
-# ------------------------------------------------------------
+# ============================================================
+# 3) Streamlit UI
+# ============================================================
+
 st.set_page_config(page_title="EB-2 PERM Approval Probability (FY2024)", layout="centered")
 
 st.title("EB-2 PERM Approval Probability Estimator (FY2024)")
@@ -122,9 +154,10 @@ with col2:
 st.markdown("---")
 
 
-# ------------------------------------------------------------
-# 4) Helper: annualize wages (same as training)
-# ------------------------------------------------------------
+# ============================================================
+# 4) Helper: annualize wages (must match training logic)
+# ============================================================
+
 def to_annual(amount: float, unit: str) -> float:
     if unit == "Year":
         return amount
@@ -137,9 +170,10 @@ def to_annual(amount: float, unit: str) -> float:
     return amount
 
 
-# ------------------------------------------------------------
-# 5) Build model input row & predict
-# ------------------------------------------------------------
+# ============================================================
+# 5) Build model input & predict
+# ============================================================
+
 if st.button("Estimate Approval Probability"):
     try:
         pw_wage_val = float(pw_wage)
@@ -151,7 +185,7 @@ if st.button("Estimate Approval Probability"):
         offer_annual = to_annual(offer_mid, offer_unit)
         wage_ratio = offer_annual / pw_annual if pw_annual > 0 else np.nan
 
-        # Build one-row DataFrame in exact training schema
+        # One-row DataFrame, schema aligned with training code
         input_data = {
             "PW_WAGE": [pw_wage_val],
             "PW_UNIT_OF_PAY": [pw_unit],
