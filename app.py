@@ -8,24 +8,50 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
 # ------------------------------------------------------------
+# 0) Global patch: make np.isnan safe for mixed dtypes
+# ------------------------------------------------------------
+_orig_isnan = np.isnan
+
+
+def safe_isnan(x):
+    """
+    Wrapper around np.isnan.
+
+    If numpy cannot handle the dtype (e.g., strings / mixed object arrays),
+    just return an all-False boolean array of the same shape instead of
+    throwing a TypeError.
+    """
+    try:
+        return _orig_isnan(x)
+    except TypeError:
+        arr = np.asarray(x, dtype=object)
+        return np.zeros_like(arr, dtype=bool)
+
+
+np.isnan = safe_isnan  # brutal but solves the sklearn internal bug
+
+
+# ------------------------------------------------------------
 # 1) Load trained pipeline
 # ------------------------------------------------------------
 MODEL_PATH = "model_perm_best.pkl"
 model = joblib.load(MODEL_PATH)
 
+
 # ------------------------------------------------------------
-# 2) Fix OneHotEncoder categories: make EVERYTHING strings
-#    to avoid mixed-type comparisons / np.isnan issues
+# 2) Fix OneHotEncoder categories to avoid mixed str/float
 # ------------------------------------------------------------
 def _fix_ohe_categories(estimator):
-    """Recursively walk the estimator and make all OneHotEncoder
-    categories_ arrays pure strings (dtype=object)."""
+    """
+    Walk the estimator and, for every OneHotEncoder, force categories_
+    to be pure strings (dtype=object). This avoids '<' comparisons
+    between str and float inside sklearn.
+    """
     if isinstance(estimator, OneHotEncoder):
         if hasattr(estimator, "categories_") and estimator.categories_ is not None:
             new_cats = []
             for arr in estimator.categories_:
                 arr = np.asarray(arr, dtype=object)
-                # cast every entry to string, including nan -> 'nan'
                 new_cats.append(np.array([str(x) for x in arr], dtype=object))
             estimator.categories_ = new_cats
 
@@ -39,7 +65,6 @@ def _fix_ohe_categories(estimator):
                 continue
             _fix_ohe_categories(trans)
 
-    # for safety: handle ensembles with sub-estimators_
     elif hasattr(estimator, "estimators_"):
         for sub in estimator.estimators_:
             _fix_ohe_categories(sub)
@@ -47,8 +72,9 @@ def _fix_ohe_categories(estimator):
 
 _fix_ohe_categories(model)
 
+
 # ------------------------------------------------------------
-# 3) Streamlit UI
+# 3) Streamlit page config + UI
 # ------------------------------------------------------------
 st.set_page_config(page_title="EB-2 PERM Approval Probability (FY2024)", layout="centered")
 
@@ -95,8 +121,9 @@ with col2:
 
 st.markdown("---")
 
+
 # ------------------------------------------------------------
-# 4) Helper to annualize wages (same logic as training)
+# 4) Helper: annualize wages (same as training)
 # ------------------------------------------------------------
 def to_annual(amount: float, unit: str) -> float:
     if unit == "Year":
@@ -106,8 +133,7 @@ def to_annual(amount: float, unit: str) -> float:
     if unit == "Week":
         return amount * 52.0
     if unit == "Hour":
-        # standard 40h/week * 52 weeks
-        return amount * 2080.0
+        return amount * 2080.0  # 40h/week * 52 weeks
     return amount
 
 
@@ -125,7 +151,7 @@ if st.button("Estimate Approval Probability"):
         offer_annual = to_annual(offer_mid, offer_unit)
         wage_ratio = offer_annual / pw_annual if pw_annual > 0 else np.nan
 
-        # Build one-row DataFrame in the exact schema used at training time
+        # Build one-row DataFrame in exact training schema
         input_data = {
             "PW_WAGE": [pw_wage_val],
             "PW_UNIT_OF_PAY": [pw_unit],
@@ -145,6 +171,7 @@ if st.button("Estimate Approval Probability"):
 
         df = pd.DataFrame(input_data)
 
+        # Predict probability of certification
         prob = model.predict_proba(df)[:, 1][0] * 100.0
         prob = float(prob)
 
