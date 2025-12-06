@@ -14,7 +14,7 @@ import os
 st.set_page_config(
     page_title="PERM EB2 Approval Predictor",
     page_icon="🏛️",
-    layout="centered"
+    layout="wide"  # Use full screen width
 )
 
 # =================================================================================
@@ -110,38 +110,42 @@ st.markdown("""
         background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
         color: white;
         border-radius: 15px;
-        padding: 2rem;
+        padding: 2.5rem;
         height: 100%;
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        min-height: 600px;
     }
     .info-box h1 {
-        font-size: 2rem;
-        margin-bottom: 1rem;
+        font-size: 2.2rem;
+        margin-bottom: 1.5rem;
         font-weight: 700;
+        line-height: 1.2;
     }
     .info-box p {
-        line-height: 1.7;
-        margin-bottom: 1rem;
+        line-height: 1.8;
+        margin-bottom: 1.2rem;
         opacity: 0.95;
+        font-size: 1rem;
     }
     .info-box .badge {
         background: rgba(255,255,255,0.2);
-        padding: 0.4rem 1rem;
+        padding: 0.5rem 1.2rem;
         border-radius: 20px;
-        font-size: 0.85rem;
+        font-size: 0.9rem;
         display: inline-block;
-        margin-top: 1rem;
+        margin-top: 1.5rem;
     }
     .info-box .icon {
-        font-size: 3.5rem;
-        margin-bottom: 1rem;
+        font-size: 4rem;
+        margin-bottom: 1.5rem;
         display: block;
     }
     .form-container {
         background: white;
         border-radius: 15px;
-        padding: 2rem;
+        padding: 2.5rem;
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        min-height: 600px;
     }
     .prediction-box {
         text-align: center;
@@ -192,8 +196,11 @@ st.markdown("""
 # MAIN APP - TWO COLUMN LAYOUT
 # =================================================================================
 
-# Create two columns for layout
-col_left, col_right = st.columns([1, 1.5])
+# Add some top padding
+st.markdown('<div style="padding: 2rem 3rem;">', unsafe_allow_html=True)
+
+# Create two columns for layout - adjusted for wide screen
+col_left, col_right = st.columns([1, 2])  # Changed from [1, 1.5] to [1, 2] for better proportions
 
 # LEFT COLUMN - Information Box
 with col_left:
@@ -457,6 +464,8 @@ with col_right:
             st.exception(e)
     
     st.markdown('</div>', unsafe_allow_html=True)  # Close form-container
+
+st.markdown('</div>', unsafe_allow_html=True)  # Close padding container
 
 # =================================================================================
 # FOOTER (Full Width Below Columns)
