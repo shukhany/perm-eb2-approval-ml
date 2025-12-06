@@ -106,19 +106,49 @@ def preprocess_input(pw_wage, offer_wage_from, offer_wage_to, education, state,
 # =================================================================================
 st.markdown("""
 <style>
-    .main-header {
-        text-align: center;
-        padding: 1rem 0;
+    .info-box {
         background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
         color: white;
-        border-radius: 10px;
-        margin-bottom: 2rem;
+        border-radius: 15px;
+        padding: 2rem;
+        height: 100%;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    .info-box h1 {
+        font-size: 2rem;
+        margin-bottom: 1rem;
+        font-weight: 700;
+    }
+    .info-box p {
+        line-height: 1.7;
+        margin-bottom: 1rem;
+        opacity: 0.95;
+    }
+    .info-box .badge {
+        background: rgba(255,255,255,0.2);
+        padding: 0.4rem 1rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        display: inline-block;
+        margin-top: 1rem;
+    }
+    .info-box .icon {
+        font-size: 3.5rem;
+        margin-bottom: 1rem;
+        display: block;
+    }
+    .form-container {
+        background: white;
+        border-radius: 15px;
+        padding: 2rem;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
     }
     .prediction-box {
         text-align: center;
         padding: 2rem;
-        border-radius: 10px;
+        border-radius: 15px;
         margin: 2rem 0;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
     }
     .prediction-box.green {
         background: linear-gradient(135deg, #00b894, #00cec9);
@@ -142,26 +172,53 @@ st.markdown("""
         font-weight: 600;
         margin-bottom: 1rem;
     }
+    /* Make form inputs look better */
+    .stNumberInput input, .stSelectbox select, .stTextInput input {
+        border-radius: 8px !important;
+    }
+    /* Custom section headers */
+    .section-header {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #1e3c72;
+        margin-bottom: 1.5rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 3px solid #2a5298;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # =================================================================================
-# MAIN APP
+# MAIN APP - TWO COLUMN LAYOUT
 # =================================================================================
-st.markdown("""
-<div class="main-header">
-    <h1>🏛️ PERM EB2 Approval Predictor</h1>
-    <p style="font-size: 1.1rem; margin: 0.5rem 0;">Predict approval probability for PERM labor certification</p>
-    <p style="font-size: 0.95rem; margin: 1rem 2rem; line-height: 1.6; opacity: 0.95;">
-        This machine learning model analyzes historical PERM data (2022-2024) to predict approval probability
-        for EB-2 labor certification applications. The model evaluates wage ratios, education requirements,
-        geographic factors, and occupation codes to provide data-driven insights for case assessment.
-    </p>
-    <span style="background: rgba(255,255,255,0.2); padding: 0.25rem 1rem; border-radius: 20px; font-size: 0.85rem;">
-        Model optimized for F1 Score
-    </span>
-</div>
-""", unsafe_allow_html=True)
+
+# Create two columns for layout
+col_left, col_right = st.columns([1, 1.5])
+
+# LEFT COLUMN - Information Box
+with col_left:
+    st.markdown("""
+    <div class="info-box">
+        <span class="icon">🏛️</span>
+        <h1>PERM EB2 Approval Predictor</h1>
+        <p style="font-size: 1.05rem; font-weight: 500;">
+            Predict approval probability for PERM labor certification
+        </p>
+        <p style="font-size: 0.9rem;">
+            This machine learning model analyzes historical PERM data (2022-2024) to predict approval probability
+            for EB-2 labor certification applications.
+        </p>
+        <p style="font-size: 0.9rem;">
+            The model evaluates wage ratios, education requirements, geographic factors, and occupation codes 
+            to provide data-driven insights for case assessment.
+        </p>
+        <div class="badge">✨ Model optimized for F1 Score</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# RIGHT COLUMN - Input Form
+with col_right:
+    st.markdown('<div class="form-container">', unsafe_allow_html=True)
 
 # Check if model is loaded
 if model is None:
@@ -172,7 +229,7 @@ if model is None:
 # INPUT FORM
 # =================================================================================
 with st.form("prediction_form"):
-    st.subheader("📝 Application Details")
+    st.markdown('<div class="section-header">📝 Application Details</div>', unsafe_allow_html=True)
     
     # Wage Information
     col1, col2 = st.columns(2)
@@ -236,11 +293,16 @@ with st.form("prediction_form"):
     
     # Submit button
     submitted = st.form_submit_button("🔮 Predict Approval Probability", use_container_width=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)  # Close form-container
 
 # =================================================================================
-# PREDICTION
+# PREDICTION RESULTS (Full Width Below Form)
 # =================================================================================
 if submitted:
+    st.markdown("---")
+    st.markdown('<div style="margin-top: 2rem;"></div>', unsafe_allow_html=True)
+    
     try:
         # Preprocess input
         input_df = preprocess_input(
