@@ -151,7 +151,12 @@ st.markdown("""
 st.markdown("""
 <div class="main-header">
     <h1>🏛️ PERM EB2 Approval Predictor</h1>
-    <p>Predict approval probability for PERM labor certification</p>
+    <p style="font-size: 1.1rem; margin: 0.5rem 0;">Predict approval probability for PERM labor certification</p>
+    <p style="font-size: 0.95rem; margin: 1rem 2rem; line-height: 1.6; opacity: 0.95;">
+        This machine learning model analyzes historical PERM data (2022-2024) to predict approval probability
+        for EB-2 labor certification applications. The model evaluates wage ratios, education requirements,
+        geographic factors, and occupation codes to provide data-driven insights for case assessment.
+    </p>
     <span style="background: rgba(255,255,255,0.2); padding: 0.25rem 1rem; border-radius: 20px; font-size: 0.85rem;">
         Model optimized for F1 Score
     </span>
@@ -276,12 +281,111 @@ if submitted:
         
         st.info(f"**Recommendation:** {recommendation}")
         
+        # Calculate key factors
+        actual_offer = (offer_wage_from + (offer_wage_to if offer_wage_to > 0 else offer_wage_from)) / 2
+        wage_ratio = actual_offer / pw_wage if pw_wage > 0 else 1
+        wage_premium = actual_offer - pw_wage
+        
+        # Analyze factors affecting the score
+        st.subheader("🔍 What's Affecting Your Score?")
+        
+        positive_factors = []
+        negative_factors = []
+        neutral_factors = []
+        
+        # Wage analysis
+        if wage_ratio >= 1.2:
+            positive_factors.append(f"✅ **Strong wage offer** - Offering {wage_ratio:.1%} of prevailing wage (${actual_offer:,.0f} vs ${pw_wage:,.0f})")
+        elif wage_ratio >= 1.0:
+            neutral_factors.append(f"➖ **Adequate wage offer** - Offering {wage_ratio:.1%} of prevailing wage (${actual_offer:,.0f} vs ${pw_wage:,.0f})")
+        else:
+            negative_factors.append(f"❌ **Below prevailing wage** - Offering only {wage_ratio:.1%} of prevailing wage (${actual_offer:,.0f} vs ${pw_wage:,.0f}). This significantly reduces approval chances.")
+        
+        # Education analysis
+        education_level = EDUCATION_MAP.get(education, 2)
+        if education_level >= 4:  # Masters or higher
+            positive_factors.append(f"✅ **Advanced education required** - {education} positions typically have higher approval rates")
+        elif education_level >= 3:  # Bachelors
+            neutral_factors.append(f"➖ **Standard education requirement** - {education} is common for EB-2 applications")
+        else:
+            negative_factors.append(f"❌ **Lower education requirement** - {education} may not meet typical EB-2 standards")
+        
+        # Geographic analysis
+        region = STATE_REGIONS.get(state, 'Unknown')
+        high_demand_states = ['CA', 'NY', 'TX', 'WA', 'MA', 'VA', 'NJ']
+        if state in high_demand_states:
+            positive_factors.append(f"✅ **High-demand state** - {state} ({region}) has strong tech/professional job markets")
+        else:
+            neutral_factors.append(f"➖ **Location: {state}** - {region} region (approval rates vary by state)")
+        
+        # Ownership analysis
+        if ownership == "Yes":
+            negative_factors.append("❌ **Ownership interest** - Foreign worker ownership can complicate PERM applications and reduce approval probability")
+        else:
+            positive_factors.append("✅ **No ownership interest** - Clean employer-employee relationship")
+        
+        # SOC Code analysis
+        soc_major = str(soc_code)[:2]
+        if soc_major in ['15', '11', '13', '17', '19']:  # Tech, management, business, engineering, science
+            positive_factors.append(f"✅ **Strong occupation category** - SOC {soc_code} typically has good approval rates")
+        else:
+            neutral_factors.append(f"➖ **Occupation: SOC {soc_code}** - Approval rates vary by specific occupation")
+        
+        # Display factors in columns
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if positive_factors:
+                st.markdown("**✅ Positive Factors**")
+                for factor in positive_factors:
+                    st.markdown(factor)
+            if len(positive_factors) == 0:
+                st.markdown("**✅ Positive Factors**")
+                st.markdown("*No significant positive factors identified*")
+        
+        with col2:
+            if negative_factors:
+                st.markdown("**❌ Negative Factors**")
+                for factor in negative_factors:
+                    st.markdown(factor)
+            if len(negative_factors) == 0:
+                st.markdown("**❌ Negative Factors**")
+                st.markdown("*No significant negative factors identified*")
+        
+        if neutral_factors:
+            st.markdown("**➖ Neutral Factors**")
+            for factor in neutral_factors:
+                st.markdown(factor)
+        
+        # Improvement suggestions
+        if approval_probability < 80:
+            st.markdown("---")
+            st.subheader("💡 How to Improve Your Score")
+            suggestions = []
+            
+            if wage_ratio < 1.15:
+                increase_needed = pw_wage * 1.2 - actual_offer
+                suggestions.append(f"**Increase offered wage** - Consider offering at least ${pw_wage * 1.2:,.0f} (20% above prevailing wage, +${increase_needed:,.0f})")
+            
+            if education_level < 4 and soc_major in ['15', '11', '13']:
+                suggestions.append("**Strengthen education requirements** - If possible, require a Master's degree to better align with EB-2 standards")
+            
+            if ownership == "Yes":
+                suggestions.append("**Address ownership concerns** - Consult with immigration attorney about ownership structure and its impact on PERM")
+            
+            suggestions.append("**Verify job requirements** - Ensure all requirements are truly necessary for the position and match actual business needs")
+            suggestions.append("**Review recruitment documentation** - Strong recruitment efforts can support your case")
+            
+            for i, suggestion in enumerate(suggestions, 1):
+                st.markdown(f"{i}. {suggestion}")
+        
         # Additional insights
         with st.expander("📊 View Input Summary"):
             st.write("**Wage Information:**")
             st.write(f"- Prevailing Wage: ${pw_wage:,}")
             st.write(f"- Offered Wage: ${offer_wage_from:,}" + (f" - ${offer_wage_to:,}" if offer_wage_to > 0 else ""))
-            st.write(f"- Wage Ratio: {(offer_wage_from/pw_wage if pw_wage > 0 else 0):.2f}")
+            st.write(f"- Wage Ratio: {wage_ratio:.2f} ({wage_ratio:.1%} of prevailing)")
+            st.write(f"- Wage Premium: ${wage_premium:,.0f}")
             st.write("\n**Position Details:**")
             st.write(f"- Education: {education}")
             st.write(f"- State: {state} ({STATE_REGIONS.get(state, 'Unknown')} Region)")
