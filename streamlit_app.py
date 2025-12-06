@@ -140,13 +140,6 @@ st.markdown("""
         margin-bottom: 1.5rem;
         display: block;
     }
-    .form-container {
-        background: white;
-        border-radius: 15px;
-        padding: 2.5rem;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        min-height: 600px;
-    }
     .prediction-box {
         text-align: center;
         padding: 2rem;
@@ -225,8 +218,6 @@ with col_left:
 
 # RIGHT COLUMN - Input Form
 with col_right:
-    st.markdown('<div class="form-container">', unsafe_allow_html=True)
-    
     # Check if model is loaded
     if model is None:
         st.error("⚠️ Model not loaded. Please ensure 'best_model_for_deployment.pkl' is in the app directory.")
@@ -462,8 +453,6 @@ with col_right:
         except Exception as e:
             st.error(f"❌ Error making prediction: {str(e)}")
             st.exception(e)
-    
-    st.markdown('</div>', unsafe_allow_html=True)  # Close form-container
 
 st.markdown('</div>', unsafe_allow_html=True)  # Close padding container
 
