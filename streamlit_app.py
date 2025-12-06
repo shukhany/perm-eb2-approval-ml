@@ -219,80 +219,80 @@ with col_left:
 # RIGHT COLUMN - Input Form
 with col_right:
     st.markdown('<div class="form-container">', unsafe_allow_html=True)
-
-# Check if model is loaded
-if model is None:
-    st.error("⚠️ Model not loaded. Please ensure 'best_model_for_deployment.pkl' is in the app directory.")
-    st.stop()
-
-# =================================================================================
-# INPUT FORM
-# =================================================================================
-with st.form("prediction_form"):
-    st.markdown('<div class="section-header">📝 Application Details</div>', unsafe_allow_html=True)
     
-    # Wage Information
-    col1, col2 = st.columns(2)
-    with col1:
-        pw_wage = st.number_input(
-            "Prevailing Wage (Annual $)",
+    # Check if model is loaded
+    if model is None:
+        st.error("⚠️ Model not loaded. Please ensure 'best_model_for_deployment.pkl' is in the app directory.")
+        st.stop()
+    
+    # =================================================================================
+    # INPUT FORM
+    # =================================================================================
+    with st.form("prediction_form"):
+        st.markdown('<div class="section-header">📝 Application Details</div>', unsafe_allow_html=True)
+        
+        # Wage Information
+        col1, col2 = st.columns(2)
+        with col1:
+            pw_wage = st.number_input(
+                "Prevailing Wage (Annual $)",
+                min_value=0,
+                value=100000,
+                step=1000,
+                help="DOL-determined prevailing wage for the position"
+            )
+        with col2:
+            offer_wage_from = st.number_input(
+                "Offered Wage From ($)",
+                min_value=0,
+                value=120000,
+                step=1000,
+                help="Minimum offered wage"
+            )
+        
+        offer_wage_to = st.number_input(
+            "Offered Wage To ($ - Optional)",
             min_value=0,
-            value=100000,
+            value=0,
             step=1000,
-            help="DOL-determined prevailing wage for the position"
+            help="Maximum offered wage (leave 0 if same as 'From')"
         )
-    with col2:
-        offer_wage_from = st.number_input(
-            "Offered Wage From ($)",
-            min_value=0,
-            value=120000,
-            step=1000,
-            help="Minimum offered wage"
+        
+        # Education & Location
+        col3, col4 = st.columns(2)
+        with col3:
+            education = st.selectbox(
+                "Minimum Education Required",
+                options=list(EDUCATION_MAP.keys()),
+                index=3  # Default to Bachelor's
+            )
+        with col4:
+            state = st.selectbox(
+                "Worksite State",
+                options=list(US_STATES.keys()),
+                format_func=lambda x: f"{x} - {US_STATES[x]}",
+                index=list(US_STATES.keys()).index('CA')  # Default to California
+            )
+        
+        # Codes & Year
+        col5, col6, col7 = st.columns(3)
+        with col5:
+            year = st.selectbox("Filing Year", [2024, 2025], index=0)
+        with col6:
+            soc_code = st.text_input("SOC Code", value="15-1252", help="e.g., 15-1252 (Software Developers)")
+        with col7:
+            naics_code = st.text_input("NAICS Code", value="54", help="e.g., 541511 (Custom Software)")
+        
+        # Ownership
+        ownership = st.radio(
+            "Foreign Worker Has Ownership Interest?",
+            options=["No", "Yes"],
+            index=0,
+            horizontal=True
         )
-    
-    offer_wage_to = st.number_input(
-        "Offered Wage To ($ - Optional)",
-        min_value=0,
-        value=0,
-        step=1000,
-        help="Maximum offered wage (leave 0 if same as 'From')"
-    )
-    
-    # Education & Location
-    col3, col4 = st.columns(2)
-    with col3:
-        education = st.selectbox(
-            "Minimum Education Required",
-            options=list(EDUCATION_MAP.keys()),
-            index=3  # Default to Bachelor's
-        )
-    with col4:
-        state = st.selectbox(
-            "Worksite State",
-            options=list(US_STATES.keys()),
-            format_func=lambda x: f"{x} - {US_STATES[x]}",
-            index=list(US_STATES.keys()).index('CA')  # Default to California
-        )
-    
-    # Codes & Year
-    col5, col6, col7 = st.columns(3)
-    with col5:
-        year = st.selectbox("Filing Year", [2024, 2025], index=0)
-    with col6:
-        soc_code = st.text_input("SOC Code", value="15-1252", help="e.g., 15-1252 (Software Developers)")
-    with col7:
-        naics_code = st.text_input("NAICS Code", value="54", help="e.g., 541511 (Custom Software)")
-    
-    # Ownership
-    ownership = st.radio(
-        "Foreign Worker Has Ownership Interest?",
-        options=["No", "Yes"],
-        index=0,
-        horizontal=True
-    )
-    
-    # Submit button
-    submitted = st.form_submit_button("🔮 Predict Approval Probability", use_container_width=True)
+        
+        # Submit button
+        submitted = st.form_submit_button("🔮 Predict Approval Probability", use_container_width=True)
     
     st.markdown('</div>', unsafe_allow_html=True)  # Close form-container
 
