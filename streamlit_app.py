@@ -294,173 +294,172 @@ with col_right:
         # Submit button
         submitted = st.form_submit_button("🔮 Predict Approval Probability", use_container_width=True)
     
+    # =================================================================================
+    # PREDICTION RESULTS (Inside Right Column)
+    # =================================================================================
+    if submitted:
+        st.markdown('<div style="margin-top: 1rem;"></div>', unsafe_allow_html=True)
+        
+        try:
+            # Preprocess input
+            input_df = preprocess_input(
+                pw_wage, offer_wage_from, offer_wage_to, education, 
+                state, year, soc_code, naics_code, ownership
+            )
+            
+            # Make prediction
+            proba = model.predict_proba(input_df)[0]
+            approval_probability = round(proba[1] * 100, 1)
+            
+            # Determine risk level
+            if approval_probability >= 80:
+                risk_level = "LOW RISK"
+                risk_color = "green"
+                recommendation = "✅ Strong case. Standard processing recommended."
+                icon = "🟢"
+            elif approval_probability >= 60:
+                risk_level = "MODERATE RISK"
+                risk_color = "orange"
+                recommendation = "⚠️ Review case details. Consider strengthening weak areas."
+                icon = "🟡"
+            else:
+                risk_level = "HIGH RISK"
+                risk_color = "red"
+                recommendation = "🔴 Significant concerns. Detailed review recommended before filing."
+                icon = "🔴"
+            
+            # Display results
+            st.markdown(f"""
+            <div class="prediction-box {risk_color}">
+                <div style="font-size: 3rem;">{icon}</div>
+                <div class="probability">{approval_probability}%</div>
+                <div style="font-size: 0.9rem; opacity: 0.9;">Approval Probability</div>
+                <div class="risk-level">{risk_level}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.info(f"**Recommendation:** {recommendation}")
+            
+            # Calculate key factors
+            actual_offer = (offer_wage_from + (offer_wage_to if offer_wage_to > 0 else offer_wage_from)) / 2
+            wage_ratio = actual_offer / pw_wage if pw_wage > 0 else 1
+            wage_premium = actual_offer - pw_wage
+            
+            # Analyze factors affecting the score
+            st.subheader("🔍 What's Affecting Your Score?")
+            
+            positive_factors = []
+            negative_factors = []
+            neutral_factors = []
+            
+            # Wage analysis
+            if wage_ratio >= 1.2:
+                positive_factors.append(f"✅ **Strong wage offer** - Offering {wage_ratio:.1%} of prevailing wage (${actual_offer:,.0f} vs ${pw_wage:,.0f})")
+            elif wage_ratio >= 1.0:
+                neutral_factors.append(f"➖ **Adequate wage offer** - Offering {wage_ratio:.1%} of prevailing wage (${actual_offer:,.0f} vs ${pw_wage:,.0f})")
+            else:
+                negative_factors.append(f"❌ **Below prevailing wage** - Offering only {wage_ratio:.1%} of prevailing wage (${actual_offer:,.0f} vs ${pw_wage:,.0f}). This significantly reduces approval chances.")
+            
+            # Education analysis
+            education_level = EDUCATION_MAP.get(education, 2)
+            if education_level >= 4:  # Masters or higher
+                positive_factors.append(f"✅ **Advanced education required** - {education} positions typically have higher approval rates")
+            elif education_level >= 3:  # Bachelors
+                neutral_factors.append(f"➖ **Standard education requirement** - {education} is common for EB-2 applications")
+            else:
+                negative_factors.append(f"❌ **Lower education requirement** - {education} may not meet typical EB-2 standards")
+            
+            # Geographic analysis
+            region = STATE_REGIONS.get(state, 'Unknown')
+            high_demand_states = ['CA', 'NY', 'TX', 'WA', 'MA', 'VA', 'NJ']
+            if state in high_demand_states:
+                positive_factors.append(f"✅ **High-demand state** - {state} ({region}) has strong tech/professional job markets")
+            else:
+                neutral_factors.append(f"➖ **Location: {state}** - {region} region (approval rates vary by state)")
+            
+            # Ownership analysis
+            if ownership == "Yes":
+                negative_factors.append("❌ **Ownership interest** - Foreign worker ownership can complicate PERM applications and reduce approval probability")
+            else:
+                positive_factors.append("✅ **No ownership interest** - Clean employer-employee relationship")
+            
+            # SOC Code analysis
+            soc_major = str(soc_code)[:2]
+            if soc_major in ['15', '11', '13', '17', '19']:  # Tech, management, business, engineering, science
+                positive_factors.append(f"✅ **Strong occupation category** - SOC {soc_code} typically has good approval rates")
+            else:
+                neutral_factors.append(f"➖ **Occupation: SOC {soc_code}** - Approval rates vary by specific occupation")
+            
+            # Display factors in columns
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if positive_factors:
+                    st.markdown("**✅ Positive Factors**")
+                    for factor in positive_factors:
+                        st.markdown(factor)
+                if len(positive_factors) == 0:
+                    st.markdown("**✅ Positive Factors**")
+                    st.markdown("*No significant positive factors identified*")
+            
+            with col2:
+                if negative_factors:
+                    st.markdown("**❌ Negative Factors**")
+                    for factor in negative_factors:
+                        st.markdown(factor)
+                if len(negative_factors) == 0:
+                    st.markdown("**❌ Negative Factors**")
+                    st.markdown("*No significant negative factors identified*")
+            
+            if neutral_factors:
+                st.markdown("**➖ Neutral Factors**")
+                for factor in neutral_factors:
+                    st.markdown(factor)
+            
+            # Improvement suggestions
+            if approval_probability < 80:
+                st.markdown("---")
+                st.subheader("💡 How to Improve Your Score")
+                suggestions = []
+                
+                if wage_ratio < 1.15:
+                    increase_needed = pw_wage * 1.2 - actual_offer
+                    suggestions.append(f"**Increase offered wage** - Consider offering at least ${pw_wage * 1.2:,.0f} (20% above prevailing wage, +${increase_needed:,.0f})")
+                
+                if education_level < 4 and soc_major in ['15', '11', '13']:
+                    suggestions.append("**Strengthen education requirements** - If possible, require a Master's degree to better align with EB-2 standards")
+                
+                if ownership == "Yes":
+                    suggestions.append("**Address ownership concerns** - Consult with immigration attorney about ownership structure and its impact on PERM")
+                
+                suggestions.append("**Verify job requirements** - Ensure all requirements are truly necessary for the position and match actual business needs")
+                suggestions.append("**Review recruitment documentation** - Strong recruitment efforts can support your case")
+                
+                for i, suggestion in enumerate(suggestions, 1):
+                    st.markdown(f"{i}. {suggestion}")
+            
+            # Additional insights
+            with st.expander("📊 View Input Summary"):
+                st.write("**Wage Information:**")
+                st.write(f"- Prevailing Wage: ${pw_wage:,}")
+                st.write(f"- Offered Wage: ${offer_wage_from:,}" + (f" - ${offer_wage_to:,}" if offer_wage_to > 0 else ""))
+                st.write(f"- Wage Ratio: {wage_ratio:.2f} ({wage_ratio:.1%} of prevailing)")
+                st.write(f"- Wage Premium: ${wage_premium:,.0f}")
+                st.write("\n**Position Details:**")
+                st.write(f"- Education: {education}")
+                st.write(f"- State: {state} ({STATE_REGIONS.get(state, 'Unknown')} Region)")
+                st.write(f"- SOC Code: {soc_code}")
+                st.write(f"- NAICS Code: {naics_code}")
+                st.write(f"- Ownership Interest: {ownership}")
+                
+        except Exception as e:
+            st.error(f"❌ Error making prediction: {str(e)}")
+            st.exception(e)
+    
     st.markdown('</div>', unsafe_allow_html=True)  # Close form-container
 
 # =================================================================================
-# PREDICTION RESULTS (Full Width Below Form)
-# =================================================================================
-if submitted:
-    st.markdown("---")
-    st.markdown('<div style="margin-top: 2rem;"></div>', unsafe_allow_html=True)
-    
-    try:
-        # Preprocess input
-        input_df = preprocess_input(
-            pw_wage, offer_wage_from, offer_wage_to, education, 
-            state, year, soc_code, naics_code, ownership
-        )
-        
-        # Make prediction
-        proba = model.predict_proba(input_df)[0]
-        approval_probability = round(proba[1] * 100, 1)
-        
-        # Determine risk level
-        if approval_probability >= 80:
-            risk_level = "LOW RISK"
-            risk_color = "green"
-            recommendation = "✅ Strong case. Standard processing recommended."
-            icon = "🟢"
-        elif approval_probability >= 60:
-            risk_level = "MODERATE RISK"
-            risk_color = "orange"
-            recommendation = "⚠️ Review case details. Consider strengthening weak areas."
-            icon = "🟡"
-        else:
-            risk_level = "HIGH RISK"
-            risk_color = "red"
-            recommendation = "🔴 Significant concerns. Detailed review recommended before filing."
-            icon = "🔴"
-        
-        # Display results
-        st.markdown(f"""
-        <div class="prediction-box {risk_color}">
-            <div style="font-size: 3rem;">{icon}</div>
-            <div class="probability">{approval_probability}%</div>
-            <div style="font-size: 0.9rem; opacity: 0.9;">Approval Probability</div>
-            <div class="risk-level">{risk_level}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.info(f"**Recommendation:** {recommendation}")
-        
-        # Calculate key factors
-        actual_offer = (offer_wage_from + (offer_wage_to if offer_wage_to > 0 else offer_wage_from)) / 2
-        wage_ratio = actual_offer / pw_wage if pw_wage > 0 else 1
-        wage_premium = actual_offer - pw_wage
-        
-        # Analyze factors affecting the score
-        st.subheader("🔍 What's Affecting Your Score?")
-        
-        positive_factors = []
-        negative_factors = []
-        neutral_factors = []
-        
-        # Wage analysis
-        if wage_ratio >= 1.2:
-            positive_factors.append(f"✅ **Strong wage offer** - Offering {wage_ratio:.1%} of prevailing wage (${actual_offer:,.0f} vs ${pw_wage:,.0f})")
-        elif wage_ratio >= 1.0:
-            neutral_factors.append(f"➖ **Adequate wage offer** - Offering {wage_ratio:.1%} of prevailing wage (${actual_offer:,.0f} vs ${pw_wage:,.0f})")
-        else:
-            negative_factors.append(f"❌ **Below prevailing wage** - Offering only {wage_ratio:.1%} of prevailing wage (${actual_offer:,.0f} vs ${pw_wage:,.0f}). This significantly reduces approval chances.")
-        
-        # Education analysis
-        education_level = EDUCATION_MAP.get(education, 2)
-        if education_level >= 4:  # Masters or higher
-            positive_factors.append(f"✅ **Advanced education required** - {education} positions typically have higher approval rates")
-        elif education_level >= 3:  # Bachelors
-            neutral_factors.append(f"➖ **Standard education requirement** - {education} is common for EB-2 applications")
-        else:
-            negative_factors.append(f"❌ **Lower education requirement** - {education} may not meet typical EB-2 standards")
-        
-        # Geographic analysis
-        region = STATE_REGIONS.get(state, 'Unknown')
-        high_demand_states = ['CA', 'NY', 'TX', 'WA', 'MA', 'VA', 'NJ']
-        if state in high_demand_states:
-            positive_factors.append(f"✅ **High-demand state** - {state} ({region}) has strong tech/professional job markets")
-        else:
-            neutral_factors.append(f"➖ **Location: {state}** - {region} region (approval rates vary by state)")
-        
-        # Ownership analysis
-        if ownership == "Yes":
-            negative_factors.append("❌ **Ownership interest** - Foreign worker ownership can complicate PERM applications and reduce approval probability")
-        else:
-            positive_factors.append("✅ **No ownership interest** - Clean employer-employee relationship")
-        
-        # SOC Code analysis
-        soc_major = str(soc_code)[:2]
-        if soc_major in ['15', '11', '13', '17', '19']:  # Tech, management, business, engineering, science
-            positive_factors.append(f"✅ **Strong occupation category** - SOC {soc_code} typically has good approval rates")
-        else:
-            neutral_factors.append(f"➖ **Occupation: SOC {soc_code}** - Approval rates vary by specific occupation")
-        
-        # Display factors in columns
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if positive_factors:
-                st.markdown("**✅ Positive Factors**")
-                for factor in positive_factors:
-                    st.markdown(factor)
-            if len(positive_factors) == 0:
-                st.markdown("**✅ Positive Factors**")
-                st.markdown("*No significant positive factors identified*")
-        
-        with col2:
-            if negative_factors:
-                st.markdown("**❌ Negative Factors**")
-                for factor in negative_factors:
-                    st.markdown(factor)
-            if len(negative_factors) == 0:
-                st.markdown("**❌ Negative Factors**")
-                st.markdown("*No significant negative factors identified*")
-        
-        if neutral_factors:
-            st.markdown("**➖ Neutral Factors**")
-            for factor in neutral_factors:
-                st.markdown(factor)
-        
-        # Improvement suggestions
-        if approval_probability < 80:
-            st.markdown("---")
-            st.subheader("💡 How to Improve Your Score")
-            suggestions = []
-            
-            if wage_ratio < 1.15:
-                increase_needed = pw_wage * 1.2 - actual_offer
-                suggestions.append(f"**Increase offered wage** - Consider offering at least ${pw_wage * 1.2:,.0f} (20% above prevailing wage, +${increase_needed:,.0f})")
-            
-            if education_level < 4 and soc_major in ['15', '11', '13']:
-                suggestions.append("**Strengthen education requirements** - If possible, require a Master's degree to better align with EB-2 standards")
-            
-            if ownership == "Yes":
-                suggestions.append("**Address ownership concerns** - Consult with immigration attorney about ownership structure and its impact on PERM")
-            
-            suggestions.append("**Verify job requirements** - Ensure all requirements are truly necessary for the position and match actual business needs")
-            suggestions.append("**Review recruitment documentation** - Strong recruitment efforts can support your case")
-            
-            for i, suggestion in enumerate(suggestions, 1):
-                st.markdown(f"{i}. {suggestion}")
-        
-        # Additional insights
-        with st.expander("📊 View Input Summary"):
-            st.write("**Wage Information:**")
-            st.write(f"- Prevailing Wage: ${pw_wage:,}")
-            st.write(f"- Offered Wage: ${offer_wage_from:,}" + (f" - ${offer_wage_to:,}" if offer_wage_to > 0 else ""))
-            st.write(f"- Wage Ratio: {wage_ratio:.2f} ({wage_ratio:.1%} of prevailing)")
-            st.write(f"- Wage Premium: ${wage_premium:,.0f}")
-            st.write("\n**Position Details:**")
-            st.write(f"- Education: {education}")
-            st.write(f"- State: {state} ({STATE_REGIONS.get(state, 'Unknown')} Region)")
-            st.write(f"- SOC Code: {soc_code}")
-            st.write(f"- NAICS Code: {naics_code}")
-            st.write(f"- Ownership Interest: {ownership}")
-            
-    except Exception as e:
-        st.error(f"❌ Error making prediction: {str(e)}")
-        st.exception(e)
-
-# =================================================================================
-# FOOTER
+# FOOTER (Full Width Below Columns)
 # =================================================================================
 st.markdown("---")
 st.info("""
